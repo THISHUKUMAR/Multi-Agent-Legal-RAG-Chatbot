@@ -1,102 +1,117 @@
 import pdfplumber
 import faiss
+import numpy as np
 import os
 import google.generativeai as genai
 
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
-
+# ---------------------------
+#   GEMINI CONFIG
+# ---------------------------
 
 os.environ["GOOGLE_API_KEY"] = "AIzaSyCUIycD0goSuABem0Aungs95Lt_rkM6fa8"
 genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 
-# Embedding model
-EMBEDDING_MODEL = "models/text-embedding-004"
+embed_model = genai.GenerativeModel("text-embedding-004")
+chat_model = genai.GenerativeModel("gemini-2.0-flash")
 
-def get_embedding(text):
-    result = genai.embed_content(
-        model=EMBEDDING_MODEL,
-        content=text,
-    )
-    return result["embedding"]
-    
-
+# ---------------------------
+#   PDF TEXT EXTRACTOR
+# ---------------------------
 def extract_pages(file):
     pages = []
     with pdfplumber.open(file) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text() or ""
-            pages.append((text, page.page_number))
+        for p in pdf.pages:
+            text = p.extract_text() or ""
+            pages.append((text, p.page_number))
     return pages
 
 
+# ---------------------------
+#   CLASSIFIER
+# ---------------------------
 def classify_document(filename):
     name = filename.lower()
-    if any(x in name for x in ["act", "bare", "constitution", "code"]):
+
+    if any(x in name for x in ["act", "constitution", "code"]):
         return "acts"
-    if any(x in name for x in ["vs", "v.", "judgment", "case", "court"]):
+    if any(x in name for x in ["vs", "v.", "case", "judgment"]):
         return "cases"
     if any(x in name for x in ["regulation", "rule", "guideline"]):
         return "regulations"
+
     return "others"
 
 
+# ---------------------------
+#   BUILD VECTOR DBs
+# ---------------------------
+def embed_text(t):
+    out = embed_model.embed_content(t)
+    return np.array(out["embedding"], dtype=np.float32)
+
 def create_vector_dbs(pdf_files):
-    db = {"acts": [], "cases": [], "regulations": []}
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=150)
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1200,
-        chunk_overlap=150,
-    )
+    acts, cases, regs = [], [], []
 
-    for file in pdf_files:
-        file_type = classify_document(file.name)
-        pages = extract_pages(file)
+    for f in pdf_files:
+        dtype = classify_document(f.name)
+        pages = extract_pages(f)
 
-        docs = []
-        for text, p in pages:
-            docs.append(
-                Document(
-                    page_content=text,
-                    metadata={"source": file.name, "page": p, "type": file_type},
-                )
+        docs = [
+            Document(
+                page_content=text,
+                metadata={"source": f.name, "page": page_no, "type": dtype},
             )
+            for text, page_no in pages
+        ]
 
         chunks = splitter.split_documents(docs)
-        db[file_type].extend(chunks)
 
-    vector_dbs = {}
-    for key in db:
-        if db[key]:
-            vector_dbs[key] = FAISS.from_embeddings(
-                [(d.page_content, get_embedding(d.page_content), d.metadata) for d in db[key]],
-                embedding_size=768
-            )
-        else:
-            vector_dbs[key] = None
+        if dtype == "acts":
+            acts.extend(chunks)
+        elif dtype == "cases":
+            cases.extend(chunks)
+        elif dtype == "regulations":
+            regs.extend(chunks)
 
-    return vector_dbs
+    def build_db(docs):
+        if not docs:
+            return None
+        texts = [d.page_content for d in docs]
+        embeddings = [embed_text(t) for t in texts]
+        return FAISS.from_embeddings(embeddings, docs)
+
+    return {
+        "acts": build_db(acts),
+        "cases": build_db(cases),
+        "regulations": build_db(regs)
+    }
 
 
-def query_agent(db, query):
+# ---------------------------
+#   SEARCH + FINAL ANSWER
+# ---------------------------
+def query_agent(db, q):
     if db is None:
         return []
 
-    emb = get_embedding(query)
-    docs = db.similarity_search_by_vector(emb, k=3)
+    q_emb = embed_text(q)
+    docs = db.similarity_search_by_vector(q_emb, k=3)
 
     results = []
     for d in docs:
         citation = f"Source: {d.metadata['source']} | Page: {d.metadata['page']}"
         results.append(f"{citation}\n{d.page_content}")
+
     return results
 
 
 def answer_query(vector_dbs, query):
-
     act_hits = query_agent(vector_dbs["acts"], query)
     case_hits = query_agent(vector_dbs["cases"], query)
     reg_hits = query_agent(vector_dbs["regulations"], query)
@@ -104,23 +119,18 @@ def answer_query(vector_dbs, query):
     context = "\n\n".join(act_hits + case_hits + reg_hits)
 
     if not context:
-        return "Not available in the uploaded documents."
+        return "Not found in uploaded documents."
 
     prompt = f"""
-You are a legal agent. Answer using ONLY this context:
+Use ONLY the context.
 
+Context:
 {context}
 
-User Question: {query}
+Question: {query}
 
-Rules:
-- Do not hallucinate.
-- Use exact citations from text.
+Give a legal answer with citations.
 """
 
-    model = genai.GenerativeModel("gemini-2.0-flash")
-
-    response = model.generate_content(prompt)
+    response = chat_model.generate_content(prompt)
     return response.text
-
-
