@@ -7,7 +7,7 @@ from langchain.schema import Document
 from langchain_community.vectorstores import FAISS
 
 
-os.environ["GOOGLE_API_KEY"] = "AIzaSyCUIycD0goSuABem0Aungs95Lt_rkM6fa8"
+os.environ["GOOGLE_API_KEY"] = "AIzaSyDYAk7r_yA3X4Ir0JCp-pH0rGGtFUB5oRg"
 GEMINI_API_KEY = os.environ["GOOGLE_API_KEY"]
 
 embeddings_model = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
@@ -127,3 +127,4 @@ Rules:
 
     response = llm.invoke(prompt)
     return response.content
+
