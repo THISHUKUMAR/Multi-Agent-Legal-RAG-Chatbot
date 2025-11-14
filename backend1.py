@@ -1,39 +1,26 @@
 import pdfplumber
 import faiss
 import os
-
-# from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-# from langchain_text_splitters import RecursiveCharacterTextSplitter
-# from langchain.docstore.document import Document
-# from langchain_community.vectorstores import FAISS
-
 import google.generativeai as genai
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain.docstore.document import Document
 
 
-
-
-# ---------------------------
-#   GEMINI CONFIG
-# ---------------------------
 os.environ["GOOGLE_API_KEY"] = "AIzaSyCUIycD0goSuABem0Aungs95Lt_rkM6fa8"
-GEMINI_API_KEY = os.environ["GOOGLE_API_KEY"]
+genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 
-embeddings_model = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+# Embedding model
+EMBEDDING_MODEL = "models/text-embedding-004"
 
-llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    google_api_key=GEMINI_API_KEY,
-    temperature=0.1
-)
+def get_embedding(text):
+    result = genai.embed_content(
+        model=EMBEDDING_MODEL,
+        content=text,
+    )
+    return result["embedding"]
+    
 
-
-# ---------------------------
-#   PDF TEXT EXTRACTOR WITH PAGE NUMBERS
-# ---------------------------
 def extract_pages(file):
     pages = []
     with pdfplumber.open(file) as pdf:
@@ -43,24 +30,19 @@ def extract_pages(file):
     return pages
 
 
-#   SIMPLE DOCUMENT CLASSIFIER
-
 def classify_document(filename):
     name = filename.lower()
-
     if any(x in name for x in ["act", "bare", "constitution", "code"]):
         return "acts"
     if any(x in name for x in ["vs", "v.", "judgment", "case", "court"]):
         return "cases"
     if any(x in name for x in ["regulation", "rule", "guideline"]):
         return "regulations"
-
     return "others"
 
 
-#   BUILD 3 VECTOR DATABASES
 def create_vector_dbs(pdf_files):
-    db_acts, db_cases, db_regulations = [], [], []
+    db = {"acts": [], "cases": [], "regulations": []}
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1200,
@@ -72,38 +54,36 @@ def create_vector_dbs(pdf_files):
         pages = extract_pages(file)
 
         docs = []
-        for text, page_no in pages:
+        for text, p in pages:
             docs.append(
                 Document(
                     page_content=text,
-                    metadata={"source": file.name, "page": page_no, "type": file_type}
+                    metadata={"source": file.name, "page": p, "type": file_type},
                 )
             )
 
         chunks = splitter.split_documents(docs)
+        db[file_type].extend(chunks)
 
-        if file_type == "acts":
-            db_acts.extend(chunks)
-        elif file_type == "cases":
-            db_cases.extend(chunks)
-        elif file_type == "regulations":
-            db_regulations.extend(chunks)
+    vector_dbs = {}
+    for key in db:
+        if db[key]:
+            vector_dbs[key] = FAISS.from_embeddings(
+                [(d.page_content, get_embedding(d.page_content), d.metadata) for d in db[key]],
+                embedding_size=768
+            )
+        else:
+            vector_dbs[key] = None
 
-    # Build FAISS vector DBs
-    return {
-        "acts": FAISS.from_documents(db_acts, embeddings_model) if db_acts else None,
-        "cases": FAISS.from_documents(db_cases, embeddings_model) if db_cases else None,
-        "regulations": FAISS.from_documents(db_regulations, embeddings_model) if db_regulations else None
-    }
-
+    return vector_dbs
 
 
-#   MULTI-AGENT QUERY HANDLER
 def query_agent(db, query):
     if db is None:
         return []
 
-    docs = db.similarity_search(query, k=3)
+    emb = get_embedding(query)
+    docs = db.similarity_search_by_vector(emb, k=3)
 
     results = []
     for d in docs:
@@ -112,33 +92,30 @@ def query_agent(db, query):
     return results
 
 
-#   FINAL ANSWER AGENT
 def answer_query(vector_dbs, query):
 
     act_hits = query_agent(vector_dbs["acts"], query)
     case_hits = query_agent(vector_dbs["cases"], query)
     reg_hits = query_agent(vector_dbs["regulations"], query)
 
-    if not (act_hits or case_hits or reg_hits):
-        return "Not available in the uploaded documents."
-
     context = "\n\n".join(act_hits + case_hits + reg_hits)
 
-    prompt = f"""
-You are a legal reasoning agent. Combine Acts + Case laws + Regulations to answer.
+    if not context:
+        return "Not available in the uploaded documents."
 
-Context:
+    prompt = f"""
+You are a legal agent. Answer using ONLY this context:
+
 {context}
 
 User Question: {query}
 
 Rules:
-- Answer using ONLY the given context.
-- Provide citations exactly as given above.
-- If something is not found in context, DO NOT guess.
+- Do not hallucinate.
+- Use exact citations from text.
 """
 
-    response = llm.invoke(prompt)
-    return response.content
+    model = genai.GenerativeModel("gemini-2.0-flash")
 
-
+    response = model.generate_content(prompt)
+    return response.text
