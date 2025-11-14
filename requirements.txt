@@ -1,22 +1,18 @@
-streamlit==1.32.2
-pdfplumber==0.10.3
-pypdf==4.2.0
+streamlit
+pdfplumber
+pypdf
 
-# --- LangChain correct versions ---
-langchain==0.1.13
-langchain-core==0.1.32
-langchain-community==0.0.29
-langchain-text-splitters==0.0.1
+langchain
+langchain-core
+langchain-community
+langchain-text-splitters
 
-# --- Google genAI ---
-langchain-google-genai==0.0.6
-google-generativeai==0.3.2
+langchain-google-genai
+google-generativeai
 
-# --- Vector DB ---
 faiss-cpu
 
-# --- Others ---
-tiktoken==0.5.2
-python-dotenv==1.0.1
-requests
+tiktoken
+python-dotenv
 numpy
+requests
