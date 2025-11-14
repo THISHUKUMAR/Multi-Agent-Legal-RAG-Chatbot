@@ -1,0 +1,1 @@
+ streamlit pdfplumber pypdf faiss-cpu google-generativeai langchain langchain-google-genai langchain-community langchain-text-splitters tiktoken python-dotenv numpy requests
