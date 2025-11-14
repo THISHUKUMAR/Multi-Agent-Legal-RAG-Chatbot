@@ -2,10 +2,17 @@ import pdfplumber
 import faiss
 import os
 
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.docstore.document import Document
+# from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
+# from langchain_text_splitters import RecursiveCharacterTextSplitter
+# from langchain.docstore.document import Document
+# from langchain_community.vectorstores import FAISS
+
+import google.generativeai as genai
 from langchain_community.vectorstores import FAISS
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+
 
 
 
@@ -133,4 +140,5 @@ Rules:
 
     response = llm.invoke(prompt)
     return response.content
+
 
