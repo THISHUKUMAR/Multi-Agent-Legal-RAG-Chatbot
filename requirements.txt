@@ -1,20 +1,15 @@
---extra-index-url https://download.pytorch.org/whl/cpu
+streamlit
+pdfplumber
+pypdf
+faiss-cpu
 
-streamlit==1.32.2
-pdfplumber==0.10.3
-pypdf==4.2.0
+langchain
+langchain-community
+langchain-google-genai
+langchain-text-splitters
 
-langchain==0.1.13
-langchain-core==0.1.32
-langchain-community==0.0.29
-langchain-text-splitters==0.0.1
-
-langchain-google-genai==0.0.6
-google-generativeai==0.3.2
-
-faiss-cpu==1.7.2
-
-tiktoken==0.5.2
-numpy
+google-generativeai
+tiktoken
 python-dotenv
+numpy
 requests
