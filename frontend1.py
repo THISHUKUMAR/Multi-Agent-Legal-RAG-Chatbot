@@ -1,81 +1,149 @@
-# frontend.py
-# Streamlit UI for the Multi-Agent Legal RAG Chatbot (uses backend.py)
+import pdfplumber
+import numpy as np
+import faiss
+import google.generativeai as genai
 
-import streamlit as st
-from backend import create_vector_dbs, answer_query
 
-st.set_page_config(page_title="Multi-Agent Legal RAG", layout="wide")
-st.title("⚖ Multi-Agent Legal RAG Chatbot")
+genai.configure(api_key="YOUR_API_KEY")
 
-# Initialize session state
-if "vector_dbs" not in st.session_state:
-    st.session_state.vector_dbs = None
-if "messages" not in st.session_state:
-    st.session_state.messages = []   # list of {"role":"user"/"assistant","content":...}
-if "processed_files" not in st.session_state:
-    st.session_state.processed_files = []
 
-# Left: upload and process
-with st.sidebar:
-    st.header("Upload & Build KB")
-    uploaded_files = st.file_uploader(
-        "Upload Bare Acts, Case Laws, Regulations (PDF). Select multiple.",
-        type=["pdf"], accept_multiple_files=True
-    )
-    if st.button("Process Documents"):
-        if not uploaded_files:
-            st.sidebar.error("Upload at least one PDF")
-        else:
-            with st.spinner("Processing PDFs and building vector DBs (this can take a minute)..."):
-                try:
-                    st.session_state.vector_dbs = create_vector_dbs(uploaded_files)
-                    st.session_state.processed_files = [getattr(f,"name",str(f)) for f in uploaded_files]
-                    st.success(f"Knowledge base created from {len(uploaded_files)} files.")
-                except Exception as e:
-                    st.error(f"Processing failed: {e}")
+# --------------------------------------------------------
+# Embedding model
+# --------------------------------------------------------
+embed_model = genai.GenerativeModel("models/text-embedding-004")
 
-    if st.session_state.processed_files:
-        st.markdown("**Processed files:**")
-        for fn in st.session_state.processed_files:
-            st.markdown(f"- {fn}")
 
-st.markdown("---")
-st.subheader("Chat with your legal documents")
-st.caption("Ask legal questions; the system uses Acts, Cases & Regulations separately and cites sources.")
+def embed_text(text: str):
+    emb = embed_model.embed_content(text)["embedding"]
+    return np.array(emb, dtype=np.float32)
 
-# Display chat history
-for msg in st.session_state.messages:
-    if msg["role"] == "user":
-        with st.chat_message("user"):
-            st.write(msg["content"])
-    else:
-        with st.chat_message("assistant"):
-            st.write(msg["content"])
 
-# Chat input
-user_input = st.chat_input("Ask a legal question…")
+# --------------------------------------------------------
+# PDF extraction
+# --------------------------------------------------------
+def extract_pages(file):
+    pages = []
+    with pdfplumber.open(file) as pdf:
+        for p in pdf.pages:
+            text = p.extract_text() or ""
+            pages.append((text, p.page_number))
+    return pages
 
-if user_input:
-    # append user message
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    # show it immediately
-    st.experimental_rerun()  # ensures message shows before long processing (optional); Streamlit may re-run
 
-# The rerun will cause frontend to re-execute; we now detect last user message without assistant reply
-if st.session_state.messages:
-    # find last pair: if last role is user, we need to process
-    last = st.session_state.messages[-1]
-    if last["role"] == "user" and (len(st.session_state.messages) == 1 or st.session_state.messages[-2]["role"] == "assistant"):
-        user_q = last["content"]
-        # if KB not ready
-        if st.session_state.vector_dbs is None:
-            reply = "Please upload and process documents first (use the sidebar)."
-        else:
-            with st.spinner("Thinking…"):
-                try:
-                    reply = answer_query(st.session_state.vector_dbs, user_q)
-                except Exception as e:
-                    reply = f"Error generating answer: {e}"
-        # append assistant reply
-        st.session_state.messages.append({"role": "assistant", "content": reply})
-        st.experimental_rerun()
+# --------------------------------------------------------
+# Document classifier
+# --------------------------------------------------------
+def classify_document(filename):
+    name = filename.lower()
+
+    if any(x in name for x in ["act", "bare", "constitution", "code"]):
+        return "acts"
+    if any(x in name for x in ["vs", "v.", "judgment", "case"]):
+        return "cases"
+    if any(x in name for x in ["regulation", "rule", "guideline"]):
+        return "regulations"
+
+    return "others"
+
+
+# --------------------------------------------------------
+# Build FAISS DB
+# --------------------------------------------------------
+def build_db(docs):
+    if not docs:
+        return None
+
+    embeddings = [embed_text(d["text"]) for d in docs]
+
+    dim = len(embeddings[0])
+    index = faiss.IndexFlatL2(dim)
+    index.add(np.array(embeddings))
+
+    return {
+        "index": index,
+        "docs": docs
+    }
+
+
+# --------------------------------------------------------
+# Create vector DBs
+# --------------------------------------------------------
+def create_vector_dbs(pdf_files):
+    acts, cases, regs = [], [], []
+
+    for f in pdf_files:
+        f_type = classify_document(f.name)
+        pages = extract_pages(f)
+
+        for text, pg in pages:
+            entry = {"text": text, "page": pg, "file": f.name}
+
+            if f_type == "acts":
+                acts.append(entry)
+            elif f_type == "cases":
+                cases.append(entry)
+            elif f_type == "regulations":
+                regs.append(entry)
+
+    return {
+        "acts": build_db(acts),
+        "cases": build_db(cases),
+        "regulations": build_db(regs)
+    }
+
+
+# --------------------------------------------------------
+# Query vector DB
+# --------------------------------------------------------
+def search_db(db, query, k=3):
+    if db is None:
+        return []
+
+    q_emb = embed_text(query).reshape(1, -1)
+    D, I = db["index"].search(q_emb, k)
+
+    res = []
+    for idx in I[0]:
+        if idx < 0:
+            continue
+        d = db["docs"][idx]
+        citation = f"Source: {d['file']} | Page: {d['page']}"
+        res.append(f"{citation}\n{d['text']}")
+    return res
+
+
+# --------------------------------------------------------
+# Final answer generator
+# --------------------------------------------------------
+def answer_query(vector_dbs, query, chat_history):
+    acts = search_db(vector_dbs["acts"], query)
+    cases = search_db(vector_dbs["cases"], query)
+    regs = search_db(vector_dbs["regulations"], query)
+
+    context = "\n\n".join(acts + cases + regs)
+
+    if not context:
+        return "No matching content found in uploaded PDFs."
+
+    prompt = f"""
+You are a legal reasoning assistant.
+Use ONLY the following context to answer.
+
+Context:
+{context}
+
+User's Question:
+{query}
+
+Chat History:
+{chat_history}
+
+Rules:
+- Cite exactly as given.
+- Do NOT guess outside the context.
+"""
+
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    resp = model.generate_content(prompt)
+
+    return resp.text
