@@ -4,7 +4,7 @@ import os
 import google.generativeai as genai
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.docstore.document import Document
+from langchain.schema import Document
 
 
 os.environ["GOOGLE_API_KEY"] = "AIzaSyCUIycD0goSuABem0Aungs95Lt_rkM6fa8"
@@ -119,3 +119,4 @@ Rules:
 
     response = model.generate_content(prompt)
     return response.text
+
