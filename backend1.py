@@ -2,9 +2,12 @@ import pdfplumber
 import faiss
 import os
 import google.generativeai as genai
+
+from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.schema import Document
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+
 
 
 os.environ["GOOGLE_API_KEY"] = "AIzaSyCUIycD0goSuABem0Aungs95Lt_rkM6fa8"
@@ -119,4 +122,5 @@ Rules:
 
     response = model.generate_content(prompt)
     return response.text
+
 
