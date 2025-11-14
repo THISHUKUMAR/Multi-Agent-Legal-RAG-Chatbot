@@ -3,9 +3,10 @@ import faiss
 import os
 
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.docstore.document import Document
 from langchain_community.vectorstores import FAISS
+
 
 
 # ---------------------------
@@ -132,3 +133,4 @@ Rules:
 
     response = llm.invoke(prompt)
     return response.content
+
