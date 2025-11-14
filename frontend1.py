@@ -1,149 +1,57 @@
-import pdfplumber
-import numpy as np
-import faiss
-import google.generativeai as genai
+import streamlit as st
+from backend import create_vector_dbs, answer_query
 
+st.set_page_config(page_title="Legal RAG Chatbot", layout="wide")
+st.title("⚖ Multi-Agent Legal RAG Chatbot")
 
-genai.configure(api_key="YOUR_API_KEY")
+# Store Vector DB and Chat History
+if "vector_dbs" not in st.session_state:
+    st.session_state.vector_dbs = None
 
-
-# --------------------------------------------------------
-# Embedding model
-# --------------------------------------------------------
-embed_model = genai.GenerativeModel("models/text-embedding-004")
-
-
-def embed_text(text: str):
-    emb = embed_model.embed_content(text)["embedding"]
-    return np.array(emb, dtype=np.float32)
+if "chat" not in st.session_state:
+    st.session_state.chat = []
 
 
 # --------------------------------------------------------
-# PDF extraction
+# Upload PDFs
 # --------------------------------------------------------
-def extract_pages(file):
-    pages = []
-    with pdfplumber.open(file) as pdf:
-        for p in pdf.pages:
-            text = p.extract_text() or ""
-            pages.append((text, p.page_number))
-    return pages
+uploaded = st.file_uploader(
+    "Upload Legal PDFs (Acts, Cases, Regulations)",
+    type=["pdf"],
+    accept_multiple_files=True
+)
 
-
-# --------------------------------------------------------
-# Document classifier
-# --------------------------------------------------------
-def classify_document(filename):
-    name = filename.lower()
-
-    if any(x in name for x in ["act", "bare", "constitution", "code"]):
-        return "acts"
-    if any(x in name for x in ["vs", "v.", "judgment", "case"]):
-        return "cases"
-    if any(x in name for x in ["regulation", "rule", "guideline"]):
-        return "regulations"
-
-    return "others"
+if uploaded:
+    st.session_state.vector_dbs = create_vector_dbs(uploaded)
+    st.success("Vector databases created successfully!")
 
 
 # --------------------------------------------------------
-# Build FAISS DB
+# Show Chat
 # --------------------------------------------------------
-def build_db(docs):
-    if not docs:
-        return None
+st.subheader("Chat")
 
-    embeddings = [embed_text(d["text"]) for d in docs]
-
-    dim = len(embeddings[0])
-    index = faiss.IndexFlatL2(dim)
-    index.add(np.array(embeddings))
-
-    return {
-        "index": index,
-        "docs": docs
-    }
+for role, msg in st.session_state.chat:
+    st.chat_message(role).markdown(msg)
 
 
 # --------------------------------------------------------
-# Create vector DBs
+# User Query Input
 # --------------------------------------------------------
-def create_vector_dbs(pdf_files):
-    acts, cases, regs = [], [], []
+query = st.chat_input("Ask a legal question...")
 
-    for f in pdf_files:
-        f_type = classify_document(f.name)
-        pages = extract_pages(f)
+if query:
+    st.session_state.chat.append(("user", query))
+    st.chat_message("user").markdown(query)
 
-        for text, pg in pages:
-            entry = {"text": text, "page": pg, "file": f.name}
+    if st.session_state.vector_dbs is None:
+        answer = "Please upload PDFs first."
+    else:
+        answer = answer_query(
+            st.session_state.vector_dbs,
+            query,
+            st.session_state.chat
+        )
 
-            if f_type == "acts":
-                acts.append(entry)
-            elif f_type == "cases":
-                cases.append(entry)
-            elif f_type == "regulations":
-                regs.append(entry)
-
-    return {
-        "acts": build_db(acts),
-        "cases": build_db(cases),
-        "regulations": build_db(regs)
-    }
-
-
-# --------------------------------------------------------
-# Query vector DB
-# --------------------------------------------------------
-def search_db(db, query, k=3):
-    if db is None:
-        return []
-
-    q_emb = embed_text(query).reshape(1, -1)
-    D, I = db["index"].search(q_emb, k)
-
-    res = []
-    for idx in I[0]:
-        if idx < 0:
-            continue
-        d = db["docs"][idx]
-        citation = f"Source: {d['file']} | Page: {d['page']}"
-        res.append(f"{citation}\n{d['text']}")
-    return res
-
-
-# --------------------------------------------------------
-# Final answer generator
-# --------------------------------------------------------
-def answer_query(vector_dbs, query, chat_history):
-    acts = search_db(vector_dbs["acts"], query)
-    cases = search_db(vector_dbs["cases"], query)
-    regs = search_db(vector_dbs["regulations"], query)
-
-    context = "\n\n".join(acts + cases + regs)
-
-    if not context:
-        return "No matching content found in uploaded PDFs."
-
-    prompt = f"""
-You are a legal reasoning assistant.
-Use ONLY the following context to answer.
-
-Context:
-{context}
-
-User's Question:
-{query}
-
-Chat History:
-{chat_history}
-
-Rules:
-- Cite exactly as given.
-- Do NOT guess outside the context.
-"""
-
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    resp = model.generate_content(prompt)
-
-    return resp.text
+    st.session_state.chat.append(("assistant", answer))
+    st.chat_message("assistant").markdown(answer)
