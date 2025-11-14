@@ -1,16 +1,17 @@
-streamlit==1.32.2
+streamlit
 
-pdfplumber==0.10.3
-pypdf==4.2.0
+pdfplumber
+pypdf
 
-faiss-cpu==1.7.4
+faiss-cpu
 
-langchain==0.1.13
-langchain-community==0.0.29
-langchain-google-genai==0.0.6
+langchain
+langchain-community
+langchain-google-genai
 
-google-generativeai==0.5.2
+google-generativeai
 
-numpy==1.26.4
-requests==2.31.0
-tiktoken==0.5.2
+numpy
+requests
+tiktoken
+
