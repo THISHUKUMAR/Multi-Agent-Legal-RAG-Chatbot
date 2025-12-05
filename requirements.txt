@@ -1,26 +1,28 @@
-streamlit==1.32.2
+streamlit==1.38.0
 
-# Core LangChain
-langchain==0.1.20
-langchain-core==0.2.24
-langchain-community==0.2.20
+langchain==1.1.2
+langchain-core==1.1.1
+langchain-community==0.4.1
+langchain-text-splitters==1.0.0
 
-# Gemini integration
-langchain-google-genai==1.0.1
-google-generativeai==0.5.4
+langchain-google-genai==1.0.5
+google-generativeai==0.6.0
 
-# Embeddings
-sentence-transformers==2.7.0
+faiss-cpu==1.13.1
+sentence-transformers==2.6.1
+transformers==4.40.2
 
-# Vector DB
-faiss-cpu==1.7.4
+torch==2.3.1
+safetensors==0.4.3
 
-# Text splitting
-langchain-text-splitters==0.2.2
+pillow==10.4.0
+pdfplumber==0.11.4
+pdf2image==1.17.0
+pytesseract==0.3.13
 
-# PDF parsing
-pdfplumber==0.10.3
+numpy==2.0.2
+pandas==2.2.2
+python-dotenv==1.0.1
+tqdm==4.66.4
 
-# HuggingFace embeddings
-transformers==4.37.2
 
