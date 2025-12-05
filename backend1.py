@@ -1,18 +1,34 @@
+# import os
+# import pdfplumber
+# import faiss
+
+# # ---- LangChain Text Splitter ----
+# from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+# # ---- LangChain Document ----
+# from langchain_core.documents import Document
+
+# # ---- Vector Store ----
+# from langchain_community.vectorstores import FAISS
+
+# # ---- Embeddings & LLM (Gemini) ----
+# from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 import os
 import pdfplumber
 import faiss
 
 # ---- LangChain Text Splitter ----
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 # ---- LangChain Document ----
-from langchain_core.documents import Document
+from langchain.schema import Document
 
 # ---- Vector Store ----
 from langchain_community.vectorstores import FAISS
 
-# ---- Embeddings & LLM (Gemini) ----
+# ---- Embeddings & LLM (Google Gemini) ----
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
+
 
 
 
@@ -136,5 +152,6 @@ Rules:
 
     response = llm.invoke(prompt)
     return response.content
+
 
 
