@@ -1,10 +1,19 @@
+import os
 import pdfplumber
 import faiss
-import os
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain.text_splitter import RecursiveCharacterTextSplitter  # singular is correct
-from langchain.schema import Document
+
+# ---- LangChain Text Splitter ----
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+# ---- LangChain Document ----
+from langchain_core.documents import Document
+
+# ---- Vector Store ----
 from langchain_community.vectorstores import FAISS
+
+# ---- Embeddings & LLM (Gemini) ----
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
+
 
 
 os.environ["GOOGLE_API_KEY"] = "AIzaSyDYAk7r_yA3X4Ir0JCp-pH0rGGtFUB5oRg"
@@ -127,4 +136,5 @@ Rules:
 
     response = llm.invoke(prompt)
     return response.content
+
 
